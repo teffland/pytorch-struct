@@ -129,10 +129,11 @@ class StructDistribution(Distribution):
     @lazy_property
     def max_marginals(self):
         semiring = MaxMarginalSemiring
-        self._struct(semiring)
-        m = struct.sum(vals)
-        alpha = struct.marginals(vals)
-        return m - (alpha - 1.0))
+        vals = self.log_potentials
+        struct = self._struct(semiring)
+        m = struct.sum(vals, self.lengths)
+        alpha = struct.marginals(vals, self.lengths)
+        return m - (alpha - 1.0)
 
 
     # @constraints.dependent_property
