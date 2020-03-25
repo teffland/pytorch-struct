@@ -350,3 +350,73 @@ def TempMax(alpha):
             return m, (torch.zeros(a.shape[:-1]).long(), a)
 
     return _TempMax
+
+
+class _MaxMaginal(torch.autograd.Function):
+    @staticmethod
+    def forward(ctx, input, dim):
+        m, _ = torch.max(input, dim=dim)
+        ctx.save_for_backward(input, m, torch.tensor(dim))
+        return m
+
+    @staticmethod
+    def backward(ctx, grad_output):
+        logits, m, dim = ctx.saved_tensors
+        diff = logits - m.unsqueeze(dim)
+        grad_input = None
+        if ctx.needs_input_grad[0]:
+            grad_input = grad_output.unsqueeze(dim).add(diff)
+        return grad_input, None
+
+
+class _MaxMaginalTimes(torch.autograd.Function):
+    @staticmethod
+    def forward(ctx, a, b):
+        return a + b
+
+    @staticmethod
+    def backward(ctx, grad_output):
+        return grad_output, grad_output
+
+class _MaxMaginalUnsqueeze(torch.autograd.Function):
+    @staticmethod
+    def forward(ctx, a, dim, shape):
+        ctx.dim = dim
+        a = a.unsqueeze(dim)
+        t = list(a.shape)
+        t[dim] = shape
+        return a.expand(t)
+
+    @staticmethod
+    def backward(ctx, grad_output):
+        return grad_output.max(ctx.dim)[0], None, None
+
+
+class MaxMarginalSemiring(_BaseLog):
+    """
+    Implements a max marginal semiring
+
+    "Gradients" give max-marginals.
+
+    This is an exact approach.
+    """
+
+    @staticmethod
+    def sum(xs, dim=-1):
+        return _MaxMaginal.apply(xs, dim)
+
+    @staticmethod
+    def times(a, b):
+        return _MaxMaginalTimes.apply(a, b)
+
+    @classmethod
+    def matmul(cls, a, b):
+        "Generalized tensordot. Classes should override."
+        dims = 1
+        act_on = -(dims + 1)
+        a = _MaxMaginalUnsqueeze.apply(a, -1, b.shape[-1])
+        b = _MaxMaginalUnsqueeze.apply(b, act_on - 1, a.shape[act_on -1])
+        c = cls.times(a, b)
+        for d in range(act_on, -1, 1):
+            c = cls.sum(c.transpose(-2, -1))
+        return c

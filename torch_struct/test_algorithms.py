@@ -10,6 +10,7 @@ from .semirings import (
     CheckpointShardSemiring,
     KMaxSemiring,
     SparseMaxSemiring,
+    MaxMarginalSemiring,
     MaxSemiring,
     StdSemiring,
     SampledSemiring,
@@ -94,6 +95,29 @@ def test_entropy(data):
     entropy = -log_probs.mul(log_probs.exp()).sum(1).squeeze(0)
     assert entropy.shape == alpha.shape
     assert torch.isclose(entropy, alpha).all()
+
+@given(data())
+def test_maxmarginals(data):
+    model = data.draw(sampled_from([LinearChain, SemiMarkov]))
+    semiring = MaxMarginalSemiring
+    struct = model(semiring)
+    vals, (batch, N) = model._rand()
+    m = struct.sum(vals)
+    alpha = struct.marginals(vals)
+    print("done")
+    # alpha = struct().marginals(vals)
+    print((alpha - 1.0))
+
+    print(m)
+    # print(m.view(-1, 1, 1, 1) + (alpha - 1.0))
+    # assert(False)
+    # log_z = model(LogSemiring).sum(vals)
+    # log_probs = model(LogSemiring).enumerate(vals)[1]
+    # log_probs = torch.stack(log_probs, dim=1) - log_z
+    # print(log_probs.shape, log_z.shape, log_probs.exp().sum(1))
+    # entropy = -log_probs.mul(log_probs.exp()).sum(1).squeeze(0)
+    # assert entropy.shape == alpha.shape
+    # assert torch.isclose(entropy, alpha).all()
 
 
 @given(data())

@@ -3,6 +3,7 @@ from .semirings import (
     StdSemiring,
     KMaxSemiring,
     MaxSemiring,
+    MaxMarginalSemiring,
     EntropySemiring,
     TempMax,
 )

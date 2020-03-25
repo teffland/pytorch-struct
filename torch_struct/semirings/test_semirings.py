@@ -10,6 +10,7 @@ from . import (
     KMaxSemiring,
     MaxSemiring,
     StdSemiring,
+    MaxMarginalSemiring
 )
 
 
@@ -38,6 +39,39 @@ def test_max(a, b, c):
 
     assert torch.isclose(a, a2[0]).all()
     assert torch.isclose(b, b2[0]).all()
+
+
+@given(lint, lint, lint)
+def test_max_marg(a, b, c):
+    torch.manual_seed(0)
+    t1 = torch.rand(1, c).requires_grad_(True)
+    t2 = torch.rand(1,  c,a).requires_grad_(True)
+    t3 = torch.rand(1,  c, a).requires_grad_(True)
+
+    r1 = MaxMarginalSemiring.dot(t1, MaxMarginalSemiring.dot(t2, t3))
+    r1.sum().backward()
+    print(r1)
+    print("grad a", t1.grad)
+    print("grad b", t2.grad)
+    print(t1)
+    print(t2)
+    assert(False)
+    # t1a = torch.zeros(2, a, 1, c)
+    # t2a = torch.zeros(2, 1, b, c)
+    # t1a[0] = t1
+    # t2a[0] = t2
+    # t1a[1].fill_(-1e10)
+    # t2a[1].fill_(-1e10)
+
+    # r2 = KMaxSemiring(2).dot(t1a, t2a)
+    # assert torch.isclose(r1, r2[0]).all()
+
+    # (a, b) = torch.autograd.grad(r1.sum(), (t1, t2))
+    # (a2, b2) = torch.autograd.grad(r2[0].sum(), (t1a, t2a))
+
+    # assert torch.isclose(a, a2[0]).all()
+    # assert torch.isclose(b, b2[0]).all()
+
 
 
 @given(lint, lint, lint)
