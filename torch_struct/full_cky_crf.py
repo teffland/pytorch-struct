@@ -4,26 +4,34 @@ from .helpers import _Struct, Chart
 A, B = 0, 1
 
 
-class CKY_CRF(_Struct):
+class Full_CKY_CRF(_Struct):
     def _check_potentials(self, edge, lengths=None):
-        batch, N, _, NT = self._get_dimension(edge)
+        batch, N, N1, N2, NT, NT1, NT2 = self._get_dimension(edge)
+        assert (
+            N == N1 == N2 and NT == NT1 == NT2
+        ), f"Want N:{N} == N1:{N1} == N2:{N2} and NT:{NT} == NT1:{NT1} == NT2:{NT2}"
         edge = self.semiring.convert(edge)
+        semiring_shape = edge.shape[:-7]
         if lengths is None:
             lengths = torch.LongTensor([N] * batch).to(edge.device)
 
-        return edge, batch, N, NT, lengths
+        return edge, semiring_shape, batch, N, NT, lengths
 
     def _dp(self, scores, lengths=None, force_grad=False, cache=True):
         semiring = self.semiring
-        scores, batch, N, NT, lengths = self._check_potentials(scores, lengths)
+        scores, sshape, batch, N, NT, lengths = self._check_potentials(scores, lengths)
+        # scores.shape = *sshape, B, N, N, N, NT, NT, NT
 
         beta = [Chart((batch, N, N), scores, semiring, cache=cache) for _ in range(2)]
-        L_DIM, R_DIM = 2, 3
+        L_DIM, R_DIM = len(sshape) + 1, len(sshape) + 2  # usually 2,3
 
         # Initialize
         reduced_scores = semiring.sum(scores)
+        print(reduced_scores.shape)
         term = reduced_scores.diagonal(0, L_DIM, R_DIM)
-        ns = torch.arange(N)
+        bs, ns, nts = torch.arange(batch), torch.arange(N), torch.arange(NT)
+        term_scores = scores[:, bs, ns, ns, ns, nts, nts, nts]
+        print(term_scores.shape)
         beta[A][ns, 0] = term
         beta[B][ns, N - 1] = term
 
@@ -44,10 +52,9 @@ class CKY_CRF(_Struct):
 
     # For testing
 
-    def enumerate(self, scores):
-        # TODO: Needs to be updated
+    def enumerate(self, scores, lengths=None):
         semiring = self.semiring
-        batch, N, _, NT = scores.shape
+        batch, N, _, _, NT, _, _ = scores.shape
 
         def enumerate(x, start, end):
             if start + 1 == end:
@@ -74,5 +81,5 @@ class CKY_CRF(_Struct):
         batch = torch.randint(2, 5, (1,))
         N = torch.randint(2, 5, (1,))
         NT = torch.randint(2, 5, (1,))
-        scores = torch.rand(batch, N, N, NT)
+        scores = torch.rand(batch, N, N, N, NT, NT, NT)
         return scores, (batch.item(), N.item())

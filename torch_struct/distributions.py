@@ -7,6 +7,7 @@ from .semimarkov import SemiMarkov
 from .alignment import Alignment
 from .deptree import DepTree, deptree_nonproj, deptree_part
 from .cky_crf import CKY_CRF
+from .full_cky_crf import Full_CKY_CRF
 from .semirings import (
     LogSemiring,
     MaxSemiring,
@@ -17,7 +18,6 @@ from .semirings import (
     KMaxSemiring,
     StdSemiring,
 )
-
 
 
 class StructDistribution(Distribution):
@@ -63,12 +63,7 @@ class StructDistribution(Distribution):
 
         d = value.dim()
         batch_dims = range(d - len(self.event_shape))
-        v = self._struct().score(
-            self.log_potentials,
-            value.type_as(self.log_potentials),
-            batch_dims=batch_dims,
-        )
-
+        v = self._struct().score(self.log_potentials, value.type_as(self.log_potentials), batch_dims=batch_dims,)
 
         return v - self.partition
 
@@ -128,9 +123,7 @@ class StructDistribution(Distribution):
             kmax (*k x batch_shape*)
         """
         with torch.enable_grad():
-            return self._struct(KMaxSemiring(k)).sum(
-                self.log_potentials, self.lengths, _raw=True
-            )
+            return self._struct(KMaxSemiring(k)).sum(self.log_potentials, self.lengths, _raw=True)
 
     def topk(self, k):
         r"""
@@ -140,9 +133,7 @@ class StructDistribution(Distribution):
             kmax (*k x batch_shape x event_shape*)
         """
         with torch.enable_grad():
-            return self._struct(KMaxSemiring(k)).marginals(
-                self.log_potentials, self.lengths, _raw=True
-            )
+            return self._struct(KMaxSemiring(k)).marginals(self.log_potentials, self.lengths, _raw=True)
 
     @lazy_property
     def mode(self):
@@ -166,10 +157,8 @@ class StructDistribution(Distribution):
     def count(self):
         "Compute the log-partition function."
         ones = torch.ones_like(self.log_potentials)
-        ones[self.log_potentials.eq(-float('inf'))] = 0
-        return self._struct(StdSemiring).sum(
-            ones, self.lengths
-        )
+        ones[self.log_potentials.eq(-float("inf"))] = 0
+        return self._struct(StdSemiring).sum(ones, self.lengths)
 
     # @constraints.dependent_property
     # def support(self):
@@ -184,28 +173,103 @@ class StructDistribution(Distribution):
         "Compute the log-partition function."
         return self._struct(LogSemiring).sum(self.log_potentials, self.lengths)
 
-    def sample(self, sample_shape=torch.Size()):
+    def sample(self, sample_shape=torch.Size(), batch_size=10):
         r"""
         Compute structured samples from the distribution :math:`z \sim p(z)`.
 
         Parameters:
             sample_shape (int): number of samples
+            batch_size (int): number of samples to compute at a time
 
         Returns:
             samples (*sample_shape x batch_shape x event_shape*)
         """
-        assert len(sample_shape) == 1
-        nsamples = sample_shape[0]
+        if type(sample_shape) == int:
+            nsamples = sample_shape
+        else:
+            assert len(sample_shape) == 1
+            nsamples = sample_shape[0]
         samples = []
         for k in range(nsamples):
-            if k % 10 == 0:
-                sample = self._struct(MultiSampledSemiring).marginals(
-                    self.log_potentials, lengths=self.lengths
-                )
+            if k % batch_size == 0:
+                sample = self._struct(MultiSampledSemiring).marginals(self.log_potentials, lengths=self.lengths)
                 sample = sample.detach()
-            tmp_sample = MultiSampledSemiring.to_discrete(sample, (k % 10) + 1)
+            tmp_sample = MultiSampledSemiring.to_discrete(sample, (k % batch_size) + 1)
             samples.append(tmp_sample)
         return torch.stack(samples)
+
+    def rsample(self, sample_shape=torch.Size(), temp=1.0, noise_shape=None, sample_batch_size=10):
+        r"""
+        Compute structured samples from the _relaxed_ distribution :math:`z \sim p(z;\theta+\gamma, \tau)`
+
+        This uses gumbel perturbations on the potentials followed by the >zero-temp marginals to get approximate samples.
+        As temp varies from 0 to inf the samples will vary from being exact onehots from an approximate distribution to
+        a deterministic distribution that is always uniform over all values.
+
+        The approximation empirically causes a "heavy-hitting" bias where a few configurations are more likely than normal
+        at the expense of many others, making the tail effectively longer. There is evidence however that temps closer
+        to 1 reduce this somewhat by smoothing the distribution.
+
+        Parameters:
+            sample_shape (int): number of samples
+            temp (float): (default=1.0) relaxation temperature
+            sample_batch_size (int): size of batches to calculates samples
+
+        Returns:
+            samples (*sample_shape x batch_shape x event_shape*)
+
+        """
+        if type(sample_shape) == int:
+            nsamples = sample_shape
+        else:
+            assert len(sample_shape) == 1
+            nsamples = sample_shape[0]
+        if sample_batch_size > nsamples:
+            sample_batch_size = nsamples
+        samples = []
+
+        if noise_shape is None:
+            noise_shape = self.log_potentials.shape[1:]
+
+        # print(noise)
+        assert len(noise_shape) == len(self.log_potentials.shape[1:])
+        assert all(
+            s1 == 1 or s1 == s2 for s1, s2 in zip(noise_shape, self.log_potentials.shape[1:])
+        ), f"Noise shapes must match dimension or be 1: got: {list(zip(noise_shape, self.log_potentials.shape[1:]))}"
+
+        for k in range(nsamples):
+            if k % sample_batch_size == 0:
+                shape = self.log_potentials.shape
+                B = shape[0]
+                s_log_potentials = (
+                    self.log_potentials.reshape(1, *shape)
+                    .repeat(sample_batch_size, *tuple(1 for _ in shape))
+                    .reshape(-1, *shape[1:])
+                )
+
+                s_lengths = self.lengths
+                if s_lengths is not None:
+                    s_shape = s_lengths.shape
+                    s_lengths = (
+                        s_lengths.reshape(1, *s_shape)
+                        .repeat(sample_batch_size, *tuple(1 for _ in s_shape))
+                        .reshape(-1, *s_shape[1:])
+                    )
+
+                noise = (
+                    torch.distributions.Gumbel(0, 1)
+                    .sample((sample_batch_size * B, *noise_shape))
+                    .expand_as(s_log_potentials)
+                )
+                noisy_potentials = (s_log_potentials + noise) / temp
+
+                r_sample = (
+                    self._struct(LogSemiring)
+                    .marginals(noisy_potentials, s_lengths)
+                    .reshape(sample_batch_size, B, *shape[1:])
+                )
+                samples.append(r_sample)
+        return torch.cat(samples, dim=0)[:nsamples]
 
     def to_event(self, sequence, extra, lengths=None):
         "Convert simple representation to event."
@@ -222,9 +286,7 @@ class StructDistribution(Distribution):
         Returns:
             (enum, enum_lengths) - (*tuple cardinality x batch_shape x event_shape*)
         """
-        _, _, edges, enum_lengths = self._struct().enumerate(
-            self.log_potentials, self.lengths
-        )
+        _, _, edges, enum_lengths = self._struct().enumerate(self.log_potentials, self.lengths)
         # if expand:
         #     edges = edges.unsqueeze(1).expand(edges.shape[:1] + self.batch_shape[:1] + edges.shape[1:])
         return edges, enum_lengths
@@ -295,9 +357,7 @@ class AlignmentCRF(StructDistribution):
         super().__init__(log_potentials, lengths)
 
     def _struct(self, sr=None):
-        return self.struct(
-            sr if sr is not None else LogSemiring, self.local, max_gap=self.max_gap
-        )
+        return self.struct(sr if sr is not None else LogSemiring, self.local, max_gap=self.max_gap)
 
 
 class HMM(StructDistribution):
@@ -379,7 +439,6 @@ class DependencyCRF(StructDistribution):
         setattr(self.struct, "multiroot", multiroot)
 
 
-
 class TreeCRF(StructDistribution):
     r"""
     Represents a 0th-order span parser with NT nonterminals. Implemented using a
@@ -404,6 +463,31 @@ class TreeCRF(StructDistribution):
     Compact representation:  *N x N x NT* long tensor (Same)
     """
     struct = CKY_CRF
+
+class FullTreeCRF(StructDistribution):
+    r"""
+    Represents a 1st-order span parser with NT nonterminals. Implemented using a
+    fast CKY algorithm.
+
+    For a description see:
+
+    * Inside-Outside Algorithm, by Michael Collins
+
+    Event shape is of the form:
+
+    Parameters:
+        log_potentials (tensor) : event_shape (*N x N x N x NT x NT x NT*), e.g.
+                                    :math:`\phi(i, j, k, A_i^j \rightarrow B_i^k C_{k+1}^j)`
+        lengths (long tensor) : batch shape integers for length masking.
+
+    Implementation uses width-batched, forward-pass only
+
+    * Parallel Time: :math:`O(N)` parallel merges.
+    * Forward Memory: :math:`O(N^2)`
+
+    Compact representation:  *N x N x N xNT x NT x NT* long tensor (Same)
+    """
+    struct = Full_CKY_CRF
 
 
 class SentCFG(StructDistribution):
@@ -435,9 +519,7 @@ class SentCFG(StructDistribution):
         event_shape = log_potentials[0].shape[1:]
         self.log_potentials = log_potentials
         self.lengths = lengths
-        super(StructDistribution, self).__init__(
-            batch_shape=batch_shape, event_shape=event_shape
-        )
+        super(StructDistribution, self).__init__(batch_shape=batch_shape, event_shape=event_shape)
 
 
 class NonProjectiveDependencyCRF(StructDistribution):
