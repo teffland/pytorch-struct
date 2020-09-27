@@ -198,7 +198,9 @@ class _Struct:
                 return torch.stack(all_m, dim=0)
             else:
                 obj = self.semiring.unconvert(v).sum(dim=0)
+                # print("Getting marginals with autograd")
                 marg = torch.autograd.grad(obj, edges, create_graph=True, only_inputs=True, allow_unused=False)
+                # print("done")
                 a_m = self._arrange_marginals(marg)
                 return self.semiring.unconvert(a_m)
         else:
