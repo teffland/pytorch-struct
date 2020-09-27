@@ -91,7 +91,8 @@ class Semiring:
 
 
 class _Base(Semiring):
-    zero = 0
+    zero = 0.0
+    one = 1.0
 
     @staticmethod
     def mul(a, b):
@@ -112,6 +113,7 @@ class _Base(Semiring):
 
 class _BaseLog(Semiring):
     zero = -1e9
+    one = 1.0
 
     @staticmethod
     def sum(xs, dim=-1):
@@ -215,9 +217,7 @@ def KMaxSemiring(k):
         @classmethod
         def convert(cls, orig_potentials):
             potentials = torch.zeros(
-                (k,) + orig_potentials.shape,
-                dtype=orig_potentials.dtype,
-                device=orig_potentials.device,
+                (k,) + orig_potentials.shape, dtype=orig_potentials.dtype, device=orig_potentials.device,
             )
             cls.zero_(potentials)
             potentials[0] = orig_potentials
@@ -281,7 +281,9 @@ class KLDivergenceSemiring(Semiring):
     * First-and second-order expectation semirings with applications to minimum-risk training on translation forests :cite:`li2009first`
     * Sample Selection for Statistical Grammar Induction :cite:`hwa2000samplesf`
     """
+
     zero = 0
+
     @staticmethod
     def size():
         return 3
@@ -307,7 +309,9 @@ class KLDivergenceSemiring(Semiring):
         log_sm_p = xs[0] - part_p.unsqueeze(d)
         log_sm_q = xs[1] - part_q.unsqueeze(d)
         sm_p = log_sm_p.exp()
-        return torch.stack((part_p, part_q, torch.sum(xs[2].mul(sm_p) - log_sm_q.mul(sm_p) + log_sm_p.mul(sm_p), dim=d)))
+        return torch.stack(
+            (part_p, part_q, torch.sum(xs[2].mul(sm_p) - log_sm_q.mul(sm_p) + log_sm_p.mul(sm_p), dim=d))
+        )
 
     @staticmethod
     def mul(a, b):
@@ -337,6 +341,7 @@ class KLDivergenceSemiring(Semiring):
         xs[1].fill_(0)
         xs[2].fill_(0)
         return xs
+
 
 class CrossEntropySemiring(Semiring):
     """
@@ -408,9 +413,6 @@ class CrossEntropySemiring(Semiring):
         xs[1].fill_(0)
         xs[2].fill_(0)
         return xs
-
-
-
 
 
 class EntropySemiring(Semiring):
