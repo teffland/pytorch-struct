@@ -5,8 +5,7 @@ from torch.autograd import Function
 
 
 class Get(torch.autograd.Function):
-    """ Torch function used by `Chart` to differentiably access values.
-    """
+    """Torch function used by `Chart` to differentiably access values."""
 
     @staticmethod
     def forward(ctx, chart, grad_chart, indices):
@@ -23,8 +22,7 @@ class Get(torch.autograd.Function):
 
 
 class Set(torch.autograd.Function):
-    """ Torch function used by `Chart` to differentiably set values.
-    """
+    """Torch function used by `Chart` to differentiably set values."""
 
     @staticmethod
     def forward(ctx, chart, indices, vals):
@@ -39,9 +37,9 @@ class Set(torch.autograd.Function):
 
 
 class Chart:
-    """ Represents a tabular data structure used by dynamic programs. 
+    """Represents a tabular data structure used by dynamic programs.
 
-    Provides differentiable getters and setters for the chart that are 
+    Provides differentiable getters and setters for the chart that are
     automatically broadcaset along semiring, sample, and batch dimensions.
     """
 
@@ -74,7 +72,7 @@ class Chart:
 
 
 class _Struct:
-    """ `_Struct` is base class used to represent the graphical structure of a model.
+    """`_Struct` is base class used to represent the graphical structure of a model.
 
     Subclasses should implement a `_dp` method which computes the partition function (under the standard `_BaseSemiring`).
     Different `StructDistribution` methods will instantiate the `_Struct` subclasses
@@ -84,7 +82,7 @@ class _Struct:
         self.semiring = semiring
 
     def _dp(self, scores, lengths=None, force_grad=False, cache=True):
-        """ Implement computation equivalent to the computing partition constant Z (if self.semiring == `_BaseSemiring`).
+        """Implement computation equivalent to the computing partition constant Z (if self.semiring == `_BaseSemiring`).
 
         Params:
           scores: torch.FloatTensor, log potential scores for each factor of the model. Shape (* x batch size x *event_shape )
@@ -97,7 +95,7 @@ class _Struct:
           edges: List[torch.Tensor], the log edge potentials of the model.
                  When `scores` is already in a log_potential format for the distribution (typical), this will be
                  [scores], as in `Alignment`, `LinearChain`, `SemiMarkov`, `CKY_CRF`.
-                 An exceptional case is the `CKY` struct, which takes log potential parameters from production rules 
+                 An exceptional case is the `CKY` struct, which takes log potential parameters from production rules
                  for a PCFG, which are by definition independent of position in the sequence.
           charts: Optional[List[Chart]] = None, the charts used in computing the dp. They are needed if we want to run the
                   "backward" dynamic program and compute things like marginals w/o autograd.
@@ -106,15 +104,13 @@ class _Struct:
         raise NotImplementedError
 
     def score(self, potentials, parts, batch_dims=[0]):
-        """ Score for entire structure is product of potentials for all activated "parts".
-        """
+        """Score for entire structure is product of potentials for all activated "parts"."""
         score = torch.mul(potentials, parts)  # mask potentials by activated "parts"
         batch = tuple((score.shape[b] for b in batch_dims))
         return self.semiring.prod(score.view(batch + (-1,)))  # product of all potentialsa
 
     def _bin_length(self, length):
-        """ Find least upper bound for lengths that is a power of 2. Used in parallel scans.
-        """
+        """Find least upper bound for lengths that is a power of 2. Used in parallel scans."""
         log_N = int(math.ceil(math.log(length, 2)))
         bin_N = int(math.pow(2, log_N))
         return log_N, bin_N
@@ -187,22 +183,29 @@ class _Struct:
 
         """
         if _autograd or self.semiring is not LogSemiring or not hasattr(self, "_dp_backward"):
-            v, edges, _ = self._dp(edge, lengths=lengths, force_grad=True, cache=not _raw)
-            if _raw:
-                all_m = []
-                for k in range(v.shape[0]):
-                    obj = v[k].sum(dim=0)
+            with torch.enable_grad():
+                v, edges, _ = self._dp(edge, lengths=lengths, force_grad=True, cache=not _raw)
+                if _raw:
+                    all_m = []
+                    for k in range(v.shape[0]):
+                        obj = v[k].sum(dim=0)
 
-                    marg = torch.autograd.grad(obj, edges, create_graph=True, only_inputs=True, allow_unused=False,)
-                    all_m.append(self.semiring.unconvert(self._arrange_marginals(marg)))
-                return torch.stack(all_m, dim=0)
-            else:
-                obj = self.semiring.unconvert(v).sum(dim=0)
-                # print("Getting marginals with autograd")
-                marg = torch.autograd.grad(obj, edges, create_graph=True, only_inputs=True, allow_unused=False)
-                # print("done")
-                a_m = self._arrange_marginals(marg)
-                return self.semiring.unconvert(a_m)
+                        marg = torch.autograd.grad(
+                            obj,
+                            edges,
+                            create_graph=True,
+                            only_inputs=True,
+                            allow_unused=False,
+                        )
+                        all_m.append(self.semiring.unconvert(self._arrange_marginals(marg)))
+                    return torch.stack(all_m, dim=0)
+                else:
+                    obj = self.semiring.unconvert(v).sum(dim=0)
+                    # print("Getting marginals with autograd")
+                    marg = torch.autograd.grad(obj, edges, create_graph=True, only_inputs=True, allow_unused=False)
+                    # print("done")
+                    a_m = self._arrange_marginals(marg)
+                    return self.semiring.unconvert(a_m)
         else:
             v, _, alpha = self._dp(edge, lengths=lengths, force_grad=True)
             return self._dp_backward(edge, lengths, alpha)
@@ -220,11 +223,9 @@ class _Struct:
 
     # For Testing
     def _rand(self, *args, **kwargs):
-        """ TODO:
-        """
+        """TODO:"""
         raise NotImplementedError
 
     def enumerate(self, edge, lengths=None):
-        """ TODO:
-        """
+        """TODO:"""
         raise NotImplementedError

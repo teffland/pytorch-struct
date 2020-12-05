@@ -63,7 +63,11 @@ class StructDistribution(Distribution):
 
         d = value.dim()
         batch_dims = range(d - len(self.event_shape))
-        v = self._struct().score(self.log_potentials, value.type_as(self.log_potentials), batch_dims=batch_dims,)
+        v = self._struct().score(
+            self.log_potentials,
+            value.type_as(self.log_potentials),
+            batch_dims=batch_dims,
+        )
 
         return v - self.partition
 
@@ -260,7 +264,7 @@ class StructDistribution(Distribution):
                     torch.distributions.Gumbel(0, 1)
                     .sample((sample_batch_size * B, *noise_shape))
                     .expand_as(s_log_potentials)
-                )
+                ).to(s_log_potentials.device)
                 noisy_potentials = (s_log_potentials + noise) / temp
 
                 r_sample = (
@@ -463,6 +467,7 @@ class TreeCRF(StructDistribution):
     Compact representation:  *N x N x NT* long tensor (Same)
     """
     struct = CKY_CRF
+
 
 class FullTreeCRF(StructDistribution):
     r"""
