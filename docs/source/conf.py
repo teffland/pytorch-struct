@@ -21,28 +21,28 @@ import sphinx_rtd_theme
 from recommonmark.transform import AutoStructify
 import torch
 
-source_suffix = ['.rst', '.md']
-extensions = ['sphinx.ext.autodoc',
-              'sphinx.ext.mathjax',
-              'sphinx.ext.viewcode',
-              'sphinx.ext.coverage',
-              'sphinx.ext.githubpages',
-              'sphinx.ext.napoleon',
-              'sphinxcontrib.jinja',
-              'sphinxcontrib.bibtex',
-              'sphinx.ext.intersphinx',
-              'recommonmark',
-              'nbsphinx'
+source_suffix = [".rst", ".md"]
+extensions = [
+    "sphinx.ext.autodoc",
+    "sphinx.ext.mathjax",
+    "sphinx.ext.viewcode",
+    "sphinx.ext.coverage",
+    "sphinx.ext.githubpages",
+    "sphinx.ext.napoleon",
+    "sphinxcontrib.jinja",
+    "sphinxcontrib.bibtex",
+    "sphinx.ext.intersphinx",
+    "recommonmark",
+    "nbsphinx",
 ]
 
 
-
-project = 'pytorch-struct'
-copyright = '2019, Sasha Rush'
-author = 'Sasha Rush'
+project = "pytorch-struct"
+copyright = "2019, Sasha Rush"
+author = "Sasha Rush"
 
 # The full version, including alpha/beta/rc tags
-release = '0.4'
+release = "0.4"
 
 
 # -- General configuration ---------------------------------------------------
@@ -54,7 +54,7 @@ release = '0.4'
 # ]
 
 # Add any paths that contain templates here, relative to this directory.
-templates_path = ['_templates']
+templates_path = ["_templates"]
 
 # List of patterns, relative to source directory, that match files and
 # directories to ignore when looking for source files.
@@ -73,4 +73,4 @@ html_theme_path = [sphinx_rtd_theme.get_html_theme_path()]
 # Add any paths that contain custom static files (such as style sheets) here,
 # relative to this directory. They are copied after the builtin static files,
 # so a file named "default.css" will overwrite the builtin "default.css".
-html_static_path = ['_static']
+html_static_path = ["_static"]

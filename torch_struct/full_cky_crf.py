@@ -39,7 +39,10 @@ class Full_CKY_CRF(_Struct):
             .diagonal(0, -4, -3)  # diag of A, B, now at dim -1, ijk moves to -2
             .diagonal(0, -3, -1)  # diag of C with that gives A=B=C
         )
-        assert term_scores.shape[S + 1 :] == (N, NT), f"{term_scores.shape[S + 1 :]} == {(N, NT)}"
+        assert term_scores.shape[S + 1 :] == (
+            N,
+            NT,
+        ), f"{term_scores.shape[S + 1 :]} == {(N, NT)}"
         alpha_left = term_scores
         alpha_right = term_scores
         alphas = [[alpha_left], [alpha_right]]
@@ -54,9 +57,18 @@ class Full_CKY_CRF(_Struct):
             # Shape: *sshape, batch, N, NT, NT, NT, (N-w) w/ semantics [ ...batch, k, A, B, C, (i,j=i+w)]
             score = scores.diagonal(w, L_DIM, R_DIM)  # get diagonal scores
 
-            score = score.permute(sdims + [-6, -1, -4, -5, -3, -2])  # move diag (-1) dim and head NT (-4) dim to front
+            score = score.permute(
+                sdims + [-6, -1, -4, -5, -3, -2]
+            )  # move diag (-1) dim and head NT (-4) dim to front
             score = score[..., :w, :, :]  # remove illegal splitpoints
-            assert score.shape[S:] == (batch, N - w, NT, w, NT, NT), f"{score.shape[S:]} == {(b, N-w, NT, w, NT, NT)}"
+            assert score.shape[S:] == (
+                batch,
+                N - w,
+                NT,
+                w,
+                NT,
+                NT,
+            ), f"{score.shape[S:]} == {(b, N-w, NT, w, NT, NT)}"
 
             # Sums of left subtrees
             # Shape: *sshape, batch, (N-w), w, NT
@@ -72,15 +84,30 @@ class Full_CKY_CRF(_Struct):
 
             # Broadcast them both to match missing dims in score
             # Left B is duplicated for all head and right symbols A C
-            L_bcast = L.reshape(list(sshape) + [b, N - w, 1, w, NT, 1]).repeat(S * [1] + [1, 1, NT, 1, 1, NT])
+            L_bcast = L.reshape(list(sshape) + [b, N - w, 1, w, NT, 1]).repeat(
+                S * [1] + [1, 1, NT, 1, 1, NT]
+            )
             # Right C is duplicated for all head and left symbols A B
-            R_bcast = R.reshape(list(sshape) + [b, N - w, 1, w, 1, NT]).repeat(S * [1] + [1, 1, NT, 1, NT, 1])
-            assert score.shape == L_bcast.shape == R_bcast.shape == tuple(list(sshape) + [b, N - w, NT, w, NT, NT])
+            R_bcast = R.reshape(list(sshape) + [b, N - w, 1, w, 1, NT]).repeat(
+                S * [1] + [1, 1, NT, 1, NT, 1]
+            )
+            assert (
+                score.shape
+                == L_bcast.shape
+                == R_bcast.shape
+                == tuple(list(sshape) + [b, N - w, NT, w, NT, NT])
+            )
 
             # Now multiply all the scores and sum over k, B, C dimensions (the last three dims)
-            assert sr.times(score, L_bcast, R_bcast).shape == tuple(list(sshape) + [b, N - w, NT, w, NT, NT])
+            assert sr.times(score, L_bcast, R_bcast).shape == tuple(
+                list(sshape) + [b, N - w, NT, w, NT, NT]
+            )
             sum_prod_w = sr.sum(sr.sum(sr.sum(sr.times(score, L_bcast, R_bcast))))
-            assert sum_prod_w.shape[S:] == (b, N - w, NT), f"{sum_prod_w.shape[S:]} == {(b,N-w, NT)}"
+            assert sum_prod_w.shape[S:] == (
+                b,
+                N - w,
+                NT,
+            ), f"{sum_prod_w.shape[S:]} == {(b,N-w, NT)}"
 
             pad = sr.zero_(torch.ones(sshape + [b, w, NT]).to(sum_prod_w.device))
             sum_prod_w_left = torch.cat([sum_prod_w, pad], dim=-2)
@@ -88,7 +115,9 @@ class Full_CKY_CRF(_Struct):
             alphas[LEFT].append(sum_prod_w_left)
             alphas[RIGHT].append(sum_prod_w_right)
 
-        final = sr.sum(torch.stack(alphas[LEFT], dim=-2))[..., 0, :]  # sum out root symbol
+        final = sr.sum(torch.stack(alphas[LEFT], dim=-2))[
+            ..., 0, :
+        ]  # sum out root symbol
         log_Z = final[:, torch.arange(batch), lengths - 1]
         return log_Z, [scores], alphas
 

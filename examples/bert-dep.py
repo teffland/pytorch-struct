@@ -10,36 +10,48 @@ from torchtext.data import RawField, BucketIterator
 
 from pytorch_transformers import BertModel, BertTokenizer, AdamW, WarmupLinearSchedule
 
-config = {'bert': 'bert-base-cased', 'H': 768, 'dropout': 0.2}
+config = {"bert": "bert-base-cased", "H": 768, "dropout": 0.2}
 
 # parse conll dependency data
-model_class, tokenizer_class, pretrained_weights = BertModel, BertTokenizer, config['bert']
+model_class, tokenizer_class, pretrained_weights = (
+    BertModel,
+    BertTokenizer,
+    config["bert"],
+)
 tokenizer = tokenizer_class.from_pretrained(pretrained_weights)
+
 
 def batch_num(nums):
     lengths = torch.tensor([len(n) for n in nums]).long()
     n = lengths.max()
     out = torch.zeros(len(nums), n).long()
     for b, n in enumerate(nums):
-        out[b, :len(n)] = torch.tensor(n)
+        out[b, : len(n)] = torch.tensor(n)
     return out, lengths
 
-HEAD = RawField(preprocessing=lambda x: [int(i) for i in x],
-        postprocessing=batch_num)
+
+HEAD = RawField(preprocessing=lambda x: [int(i) for i in x], postprocessing=batch_num)
 HEAD.is_target = True
 WORD = SubTokenizedField(tokenizer)
 
-def len_filt(x): return 5 < len(x.word[0]) < 40
 
-train = ConllXDataset('wsj.train.conllx', (('word', WORD), ('head', HEAD)),
-        filter_pred=len_filt)
+def len_filt(x):
+    return 5 < len(x.word[0]) < 40
+
+
+train = ConllXDataset(
+    "wsj.train.conllx", (("word", WORD), ("head", HEAD)), filter_pred=len_filt
+)
 train_iter = TokenBucket(train, 750)
-val = ConllXDataset('wsj.dev.conllx', (('word', WORD), ('head', HEAD)),
-        filter_pred=len_filt)
-val_iter = BucketIterator(val, batch_size=20, device='cuda:0')
+val = ConllXDataset(
+    "wsj.dev.conllx", (("word", WORD), ("head", HEAD)), filter_pred=len_filt
+)
+val_iter = BucketIterator(val, batch_size=20, device="cuda:0")
 
 # make bert model to compute potentials
-H = config['H']
+H = config["H"]
+
+
 class Model(nn.Module):
     def __init__(self, hidden):
         super().__init__()
@@ -47,18 +59,19 @@ class Model(nn.Module):
         self.linear = nn.Linear(H, H)
         self.bilinear = nn.Linear(H, H)
         self.root = nn.Parameter(torch.rand(H))
-        self.dropout = nn.Dropout(config['dropout'])
+        self.dropout = nn.Dropout(config["dropout"])
 
     def forward(self, words, mapper):
         out = self.dropout(self.base_model(words)[0])
         out = torch.matmul(mapper.float().cuda().transpose(1, 2), out)
         final1 = torch.matmul(out, self.linear.weight)
-        final2 = torch.einsum('bnh,hg,bmg->bnm', out, self.bilinear.weight, final1)
+        final2 = torch.einsum("bnh,hg,bmg->bnm", out, self.bilinear.weight, final1)
         root_score = torch.matmul(out, self.root)
         final2 = final2[:, 1:-1, 1:-1]
         N = final2.shape[1]
         final2[:, torch.arange(N), torch.arange(N)] += root_score[:, 1:-1]
         return final2
+
 
 model = Model(H)
 model.cuda()
@@ -75,15 +88,18 @@ def validate(val_iter):
 
         final = model(words.cuda(), mapper)
         for b in range(batch):
-            final[b, lengths[b]-1:, :] = 0
-            final[b, :, lengths[b]-1:] = 0
+            final[b, lengths[b] - 1 :, :] = 0
+            final[b, :, lengths[b] - 1 :] = 0
         dist = DependencyCRF(final, lengths=lengths)
         gold = dist.struct.to_parts(label, lengths=lengths).type_as(dist.argmax)
-        incorrect_edges += (dist.argmax[:, :].cpu() - gold[:, :].cpu()).abs().sum() / 2.0
+        incorrect_edges += (
+            dist.argmax[:, :].cpu() - gold[:, :].cpu()
+        ).abs().sum() / 2.0
         total_edges += gold.sum()
 
     print(total_edges, incorrect_edges)
     model.train()
+
 
 def train(train_iter, val_iter, model):
     opt = AdamW(model.parameters(), lr=1e-4, eps=1e-8)
@@ -99,8 +115,8 @@ def train(train_iter, val_iter, model):
         # Model
         final = model(words.cuda(), mapper)
         for b in range(batch):
-            final[b, lengths[b]-1:, :] = 0
-            final[b, :, lengths[b]-1:] = 0
+            final[b, lengths[b] - 1 :, :] = 0
+            final[b, :, lengths[b] - 1 :] = 0
 
         if not lengths.max() <= final.shape[1] + 1:
             print("fail")
@@ -122,5 +138,6 @@ def train(train_iter, val_iter, model):
             losses = []
         if i % 600 == 500:
             validate(val_iter)
+
 
 train(train_iter, val_iter, model)
